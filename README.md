@@ -19,23 +19,42 @@ An Intent-First AI application powered by **Gemini 2.0 Flash** that analyzes foo
 
 ## 🚀 Quick Start
 
-### Installation
+### 1. Install Dependencies
+This project uses **npm** (Node Package Manager). All dependencies are listed in `package.json`.
+
 ```bash
+# Install all required packages
 npm install
 ```
 
-### Environment Setup
-Create `.env` file:
+**Core Dependencies:**
+- `react` - UI framework
+- `react-dom` - React DOM rendering
+- `framer-motion` - Animations
+- `lucide-react` - Icons
+- `openai` - AI SDK for Gemini API
+- `tailwindcss` - Styling
+
+### 2. Environment Setup
+Create `.env` file in the project root:
 ```bash
 VITE_OPENROUTER_API_KEY=your-api-key-here
 ```
 
-### Run
+Get your API key from: [OpenRouter](https://openrouter.ai/)
+
+### 3. Run Development Server
 ```bash
 npm run dev
 ```
 
-Visit: **http://localhost:3000**
+Visit: **http://localhost:5173**
+
+### 4. Build for Production
+```bash
+npm run build
+npm run preview
+```
 
 ---
 
