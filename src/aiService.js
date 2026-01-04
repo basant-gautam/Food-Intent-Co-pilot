@@ -67,11 +67,11 @@ OUTPUT FORMAT (must be valid JSON):
   }
 }`;
 
-// 🧠 Analyze Food with Gemini 2.0 Flash
+// 🧠 Analyze Food with Text-Only Model (Cheaper!)
 export async function analyzeFoodWithAI(query) {
   try {
     const completion = await openai.chat.completions.create({
-      model: "google/gemini-2.0-flash-exp:free", // Gemini 2.0 Flash
+      model: "openai/gpt-3.5-turbo", // Cheap & Fast Text-Only Model
       messages: [
         {
           role: "system",
@@ -110,55 +110,20 @@ Please provide honest analysis with confidence scores and uncertainty.`
   }
 }
 
-// 📸 Analyze Image with Gemini Vision
+// 📸 DISABLED - Vision is expensive, use OCR instead!
 export async function analyzeImageWithAI(imageBase64) {
-  try {
-    const completion = await openai.chat.completions.create({
-      model: "google/gemini-2.0-flash-exp:free",
-      messages: [
-        {
-          role: "system",
-          content: FOOD_COPILOT_PROMPT
-        },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: "Analyze the food product in this image. Extract the product name and ingredients if visible. Provide the same detailed analysis as you would for a text query."
-            },
-            {
-              type: "image_url",
-              image_url: {
-                url: imageBase64
-              }
-            }
-          ]
-        }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.7,
-      max_tokens: 2000
-    });
-
-    const result = JSON.parse(completion.choices[0].message.content);
-    return result;
-    
-  } catch (error) {
-    console.error('Image Analysis Error:', error);
-    
-    return {
-      name: "Image Analysis Failed",
-      reasoning: "I couldn't process the image. Please try again or type the product name instead.",
-      uncertainty: "Image analysis requires a clear view of the product label or packaging.",
-      tradeoffs: "N/A",
-      confidence: 10,
-      overallSafety: "moderate",
-      ingredients: [],
-      dietFlags: {},
-      error: true
-    };
-  }
+  // Return error - force users to use OCR
+  return {
+    name: "Vision Analysis Disabled",
+    reasoning: "Vision analysis has been disabled to save credits. Please use the OCR button (purple) to extract text from images instead.",
+    uncertainty: "Vision models are expensive. OCR + text analysis is more cost-effective.",
+    tradeoffs: "N/A",
+    confidence: 0,
+    overallSafety: "moderate",
+    ingredients: [],
+    dietFlags: {},
+    error: true
+  };
 }
 
 // 🔄 Convert image file to base64

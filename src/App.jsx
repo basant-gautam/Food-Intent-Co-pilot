@@ -2,36 +2,60 @@ import { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Camera, Search, AlertTriangle, CheckCircle2, Brain, 
-  Sparkles, Info, Shield, Leaf, Circle, Flame, Upload
+  Sparkles, Info, Shield, Leaf, Circle, Flame, FileText, ScanText,
+  TrendingUp, TrendingDown, Zap, Target, Coffee, Apple, Pizza, Cookie
 } from 'lucide-react'
-import { analyzeFoodWithAI, analyzeImageWithAI, imageToBase64 } from './aiService'
+import { analyzeFoodWithAI } from './aiService'
+import { extractTextFromImage, fileToBase64 } from './ocrService'
 
-// 🎨 Safety-based theme colors
-const safetyTheme = {
-  safe: {
-    bg: "from-emerald-50 to-green-50",
-    border: "border-emerald-200",
-    text: "text-emerald-900",
-    icon: "text-emerald-600",
-    badge: "bg-emerald-100 text-emerald-700",
-    glow: "shadow-emerald-200/50"
-  },
-  moderate: {
-    bg: "from-amber-50 to-yellow-50",
-    border: "border-amber-200",
-    text: "text-amber-900",
-    icon: "text-amber-600",
-    badge: "bg-amber-100 text-amber-700",
-    glow: "shadow-amber-200/50"
-  },
-  concerning: {
-    bg: "from-rose-50 to-red-50",
-    border: "border-rose-200",
-    text: "text-rose-900",
-    icon: "text-rose-600",
-    badge: "bg-rose-100 text-rose-700",
-    glow: "shadow-rose-200/50"
+// 🎨 Enhanced Theme Engine - Dynamic based on Risk Score
+const getThemeEngine = (safety, confidence) => {
+  const themes = {
+    safe: {
+      // Minimalist Theme - Emphasizes transparency
+      bg: "from-emerald-50 via-green-50 to-teal-50",
+      border: "border-emerald-300",
+      text: "text-emerald-900",
+      icon: "text-emerald-600",
+      badge: "bg-emerald-100 text-emerald-700",
+      glow: "shadow-emerald-300/60 shadow-xl",
+      layoutDensity: "relaxed", // More whitespace
+      statusIcon: CheckCircle2,
+      statusBg: "bg-emerald-500",
+      accentColor: "emerald",
+      warningBanner: false
+    },
+    moderate: {
+      // Balanced Theme
+      bg: "from-amber-50 via-yellow-50 to-orange-50",
+      border: "border-amber-300",
+      text: "text-amber-900",
+      icon: "text-amber-600",
+      badge: "bg-amber-100 text-amber-700",
+      glow: "shadow-amber-300/60 shadow-xl",
+      layoutDensity: "normal",
+      statusIcon: Info,
+      statusBg: "bg-amber-500",
+      accentColor: "amber",
+      warningBanner: confidence < 70 // Show banner if low confidence
+    },
+    concerning: {
+      // Alert-driven Theme - Prominent warnings
+      bg: "from-rose-100 via-red-50 to-orange-50",
+      border: "border-rose-400",
+      text: "text-rose-900",
+      icon: "text-rose-600",
+      badge: "bg-rose-100 text-rose-700",
+      glow: "shadow-rose-400/70 shadow-2xl",
+      layoutDensity: "compact", // Dense for urgency
+      statusIcon: AlertTriangle,
+      statusBg: "bg-rose-600",
+      accentColor: "rose",
+      warningBanner: true // Always show warning
+    }
   }
+  
+  return themes[safety] || themes.moderate
 }
 
 export default function App() {
@@ -39,7 +63,10 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysis, setAnalysis] = useState(null)
   const [mode, setMode] = useState('text')
-  const fileInputRef = useRef(null)
+  const [ocrProgress, setOcrProgress] = useState(0)
+  const [extractedText, setExtractedText] = useState('')
+  const [previewImage, setPreviewImage] = useState(null)
+  const ocrFileInputRef = useRef(null)
 
   // 🧠 AI Analysis with Gemini 2.0 Flash
   const analyzeFood = async (query) => {
@@ -66,23 +93,50 @@ export default function App() {
     setIsAnalyzing(false)
   }
 
-  // 📸 Analyze uploaded image
-  const analyzeImage = async (file) => {
+  // � OCR - Extract text from image then analyze with TEXT-ONLY AI
+  const handleOCRImage = async (file) => {
     setIsAnalyzing(true)
     setAnalysis(null)
-    setMode('processing')
+    setExtractedText('')
+    setOcrProgress(0)
+    setMode('ocr')
 
     try {
-      const base64Image = await imageToBase64(file)
-      const result = await analyzeImageWithAI(base64Image)
-      setAnalysis(result)
-      setInput(result.name || 'Scanned Product')
+      // Show image preview
+      const preview = await fileToBase64(file)
+      setPreviewImage(preview)
+
+      // Extract text using OCR
+      const { text, confidence } = await extractTextFromImage(file, (progress) => {
+        setOcrProgress(progress)
+      })
+
+      setExtractedText(text)
+      
+      // If text extracted successfully, analyze it with AI
+      if (text && text.length > 5) {
+        setMode('analyzing')
+        const result = await analyzeFoodWithAI(`Analyze this text extracted from a food product image: "${text}"`)
+        setAnalysis(result)
+        setInput(text.substring(0, 100)) // Set first 100 chars as input
+      } else {
+        setAnalysis({
+          name: "OCR Result",
+          reasoning: "I couldn't extract enough text from the image. Please try uploading a clearer image with visible text.",
+          uncertainty: "The image might be blurry, too dark, or the text might be too small.",
+          tradeoffs: "N/A",
+          confidence: 20,
+          overallSafety: "moderate",
+          ingredients: [],
+          dietFlags: {}
+        })
+      }
     } catch (error) {
-      console.error('Image analysis failed:', error)
+      console.error('OCR failed:', error)
       setAnalysis({
-        name: "Image Analysis Error",
-        reasoning: "I couldn't process the image. Please try uploading a clearer photo or type the product name.",
-        uncertainty: "Image quality or format might be causing issues.",
+        name: "OCR Error",
+        reasoning: "Failed to extract text from the image. Please ensure the image contains clear, readable text.",
+        uncertainty: error.message || "Unknown error occurred",
         tradeoffs: "N/A",
         confidence: 10,
         overallSafety: "moderate",
@@ -101,18 +155,60 @@ export default function App() {
     analyzeFood(input)
   }
 
-  const handleCameraMode = () => {
-    fileInputRef.current?.click()
-  }
-
-  const handleFileChange = (e) => {
+  const handleOCRFileChange = (e) => {
     const file = e.target.files?.[0]
     if (file) {
-      analyzeImage(file)
+      handleOCRImage(file)
     }
   }
 
-  const theme = analysis ? safetyTheme[analysis.overallSafety] : null
+  const handleOCRMode = () => {
+    ocrFileInputRef.current?.click()
+  }
+
+  // 🎯 Generate Co-pilot Recommendation
+  const generateRecommendation = (analysis) => {
+    if (!analysis) return null
+    
+    const { name, overallSafety, confidence, tradeoffs, ingredients } = analysis
+    
+    // Infer user situation
+    let situation = "Checking this food item"
+    if (name.toLowerCase().includes('snack') || name.toLowerCase().includes('chips') || name.toLowerCase().includes('cookie')) {
+      situation = "Looks like you're looking for a quick snack"
+    } else if (name.toLowerCase().includes('drink') || name.toLowerCase().includes('soda') || name.toLowerCase().includes('juice')) {
+      situation = "Analyzing your beverage choice"
+    } else if (name.toLowerCase().includes('meal') || name.toLowerCase().includes('dinner')) {
+      situation = "Evaluating your meal option"
+    }
+    
+    // Generate specific actions
+    let actions = []
+    if (overallSafety === 'concerning') {
+      actions = [
+        '⚠️ Consider limiting consumption',
+        '🔍 Check for healthier alternatives',
+        '💡 Read ingredient labels carefully'
+      ]
+    } else if (overallSafety === 'moderate') {
+      actions = [
+        '⚖️ Consume in moderation',
+        '🕐 Limit to occasional use',
+        '🔄 Balance with healthier options'
+      ]
+    } else {
+      actions = [
+        '✅ Safe for regular consumption',
+        '💚 Fits well in balanced diet',
+        '🎯 Good choice for your situation'
+      ]
+    }
+    
+    return { situation, actions }
+  }
+
+  const theme = analysis ? getThemeEngine(analysis.overallSafety, analysis.confidence) : null
+  const copilotRec = analysis ? generateRecommendation(analysis) : null
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 p-4 sm:p-8">
@@ -143,7 +239,7 @@ export default function App() {
             </h1>
           </motion.div>
           <p className="text-slate-600 text-sm max-w-md mx-auto">
-            Powered by Gemini 2.0 Flash AI—analyze any food with vision or text. Just honest insights with uncertainty included.
+            Powered by GPT-3.5 AI with OCR—extract text from food images and get honest insights with uncertainty included.
           </p>
         </motion.div>
 
@@ -165,23 +261,24 @@ export default function App() {
               />
               
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex gap-2">
+                {/* Removed vision upload - too expensive! */}
                 <input
-                  ref={fileInputRef}
+                  ref={ocrFileInputRef}
                   type="file"
                   accept="image/*"
-                  onChange={handleFileChange}
+                  onChange={handleOCRFileChange}
                   className="hidden"
                 />
                 <motion.button
                   type="button"
-                  onClick={handleCameraMode}
+                  onClick={handleOCRMode}
                   disabled={isAnalyzing}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  className="p-3 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-50"
-                  title="Upload image for AI vision analysis"
+                  className="p-3 bg-purple-100 hover:bg-purple-200 rounded-xl transition-colors disabled:opacity-50"
+                  title="Extract text from image using OCR (Free!)"
                 >
-                  <Upload className="text-slate-600" size={20} />
+                  <ScanText className="text-purple-600" size={20} />
                 </motion.button>
                 <motion.button
                   type="submit"
@@ -230,6 +327,71 @@ export default function App() {
                 <p className="text-indigo-100 text-sm mt-2">AI is reading ingredients and labels</p>
               </motion.div>
             )}
+
+            {/* 🔍 OCR Processing Mode */}
+            {(mode === 'ocr' || mode === 'analyzing') && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="mb-8 bg-gradient-to-br from-purple-500 to-pink-600 rounded-2xl p-8 shadow-2xl"
+              >
+                <div className="flex flex-col items-center">
+                  <motion.div
+                    animate={{ scale: [1, 1.1, 1] }}
+                    transition={{ repeat: Infinity, duration: 2 }}
+                  >
+                    <ScanText className="text-white mx-auto mb-3" size={48} />
+                  </motion.div>
+                  <p className="text-white text-lg font-medium mb-2">
+                    {mode === 'ocr' ? 'Extracting text from image...' : 'Analyzing extracted text with AI...'}
+                  </p>
+                  <p className="text-purple-100 text-sm mb-4">
+                    {mode === 'ocr' ? 'Using OCR technology to read text' : 'AI is reasoning about the extracted content'}
+                  </p>
+                  
+                  {/* Progress Bar */}
+                  {mode === 'ocr' && (
+                    <div className="w-full max-w-md bg-white/20 rounded-full h-2 mb-4">
+                      <motion.div
+                        className="bg-white h-2 rounded-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${ocrProgress}%` }}
+                        transition={{ duration: 0.3 }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Image Preview */}
+                  {previewImage && (
+                    <motion.img
+                      src={previewImage}
+                      alt="OCR Preview"
+                      className="max-w-md w-full rounded-xl shadow-lg mt-4"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                    />
+                  )}
+
+                  {/* Extracted Text Preview */}
+                  {extractedText && mode === 'analyzing' && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-4 bg-white/10 backdrop-blur-sm rounded-xl p-4 max-w-md w-full"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileText className="text-white" size={20} />
+                        <p className="text-white font-medium">Extracted Text:</p>
+                      </div>
+                      <p className="text-purple-100 text-sm max-h-32 overflow-y-auto">
+                        {extractedText}
+                      </p>
+                    </motion.div>
+                  )}
+                </div>
+              </motion.div>
+            )}
           </AnimatePresence>
 
           {/* 🧠 Generative UI - Analysis Results */}
@@ -241,50 +403,78 @@ export default function App() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -30, scale: 0.95 }}
                 transition={{ type: "spring", damping: 20 }}
-                className={`bg-gradient-to-br ${theme.bg} border-2 ${theme.border} rounded-3xl shadow-2xl ${theme.glow} overflow-hidden`}
+                className="space-y-4"
               >
-                {/* Header with Confidence Bar */}
-                <div className="p-6 border-b border-current/10">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h2 className={`text-2xl font-bold ${theme.text} mb-1`}>{analysis.name}</h2>
-                      <div className="flex items-center gap-2 mt-2">
-                        {analysis.dietFlags.vegan && (
-                          <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full flex items-center gap-1">
-                            <Leaf size={12} /> Vegan
-                          </span>
-                        )}
-                        {analysis.dietFlags.glutenFree && (
-                          <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
-                            Gluten-Free
-                          </span>
-                        )}
+                {/* ⚠️ Alert-Driven Warning Banner (High Risk Only) */}
+                {theme.warningBanner && (
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className={`bg-${theme.accentColor}-600 text-white rounded-2xl p-6 shadow-2xl`}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className={`p-3 bg-white/20 rounded-xl`}>
+                        <theme.statusIcon size={32} className="text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-xl font-bold mb-2">
+                          {analysis.overallSafety === 'concerning' ? '⚠️ High Risk Detected' : '⚡ Moderate Caution'}
+                        </h3>
+                        <p className="text-white/90 text-sm leading-relaxed">
+                          {analysis.overallSafety === 'concerning' 
+                            ? 'This product may pose health concerns. Review details carefully before consuming.' 
+                            : 'This product has some concerns. Consider the trade-offs before consuming.'}
+                        </p>
                       </div>
                     </div>
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ delay: 0.3, type: "spring" }}
-                    >
-                      {analysis.overallSafety === 'safe' && <CheckCircle2 className={theme.icon} size={40} />}
-                      {analysis.overallSafety === 'moderate' && <AlertTriangle className={theme.icon} size={40} />}
-                      {analysis.overallSafety === 'concerning' && <Flame className={theme.icon} size={40} />}
-                    </motion.div>
-                  </div>
+                  </motion.div>
+                )}
 
-                  {/* Confidence Meter - HONEST UNCERTAINTY */}
-                  <div className="mt-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={`text-sm font-medium ${theme.text}`}>My Confidence Level</span>
-                      <span className={`text-lg font-bold ${theme.text}`}>{analysis.confidence}%</span>
-                    </div>
-                    <div className="w-full h-3 bg-white/50 rounded-full overflow-hidden">
+                {/* Main Analysis Card */}
+                <motion.div
+                  className={`bg-gradient-to-br ${theme.bg} border-2 ${theme.border} rounded-3xl shadow-2xl ${theme.glow} overflow-hidden`}
+                >
+                  {/* Header with Confidence Bar */}
+                  <div className={`p-6 border-b border-current/10 ${theme.layoutDensity === 'compact' ? 'pb-4' : 'pb-6'}`}>
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h2 className={`text-2xl font-bold ${theme.text} mb-1`}>{analysis.name}</h2>
+                        <div className="flex items-center gap-2 mt-2">
+                          {analysis.dietFlags?.vegan && (
+                            <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full flex items-center gap-1">
+                              <Leaf size={12} /> Vegan
+                            </span>
+                          )}
+                          {analysis.dietFlags?.glutenFree && (
+                            <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                              Gluten-Free
+                            </span>
+                          )}
+                        </div>
+                      </div>
                       <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${analysis.confidence}%` }}
-                        transition={{ delay: 0.5, duration: 1, ease: "easeOut" }}
-                        className={`h-full ${analysis.confidence > 80 ? 'bg-emerald-500' : analysis.confidence > 60 ? 'bg-amber-500' : 'bg-rose-500'}`}
-                      />
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ delay: 0.3, type: "spring" }}
+                        className={`p-3 rounded-2xl ${theme.statusBg}`}
+                      >
+                        <theme.statusIcon className="text-white" size={32} />
+                      </motion.div>
+                    </div>
+
+                    {/* Confidence Meter - HONEST UNCERTAINTY */}
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-sm font-medium ${theme.text}`}>My Confidence Level</span>
+                        <span className={`text-lg font-bold ${theme.text}`}>{analysis.confidence}%</span>
+                      </div>
+                      <div className="w-full h-3 bg-white/50 rounded-full overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${analysis.confidence}%` }}
+                          transition={{ delay: 0.5, duration: 1, ease: "easeOut" }}
+                          className={`h-full ${analysis.confidence > 80 ? 'bg-emerald-500' : analysis.confidence > 60 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                        />
                     </div>
                   </div>
                 </div>
@@ -332,6 +522,65 @@ export default function App() {
                       <p className="text-slate-700 leading-relaxed">{analysis.tradeoffs}</p>
                     </div>
                   </motion.div>
+
+                  {/* 🎯 CO-PILOT'S ACTIONABLE RECOMMENDATION */}
+                  {copilotRec && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.5 }}
+                      className={`bg-gradient-to-br ${
+                        analysis.overallSafety === 'safe' 
+                          ? 'from-emerald-500 to-teal-600' 
+                          : analysis.overallSafety === 'moderate'
+                          ? 'from-amber-500 to-orange-600'
+                          : 'from-rose-500 to-red-600'
+                      } text-white rounded-2xl p-6 shadow-xl`}
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="p-3 bg-white/20 rounded-xl">
+                          <Target size={28} />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="text-lg font-bold mb-2 flex items-center gap-2">
+                            🎯 Co-pilot's Recommendation
+                          </h3>
+                          
+                          {/* User Situation Inference */}
+                          <div className="mb-4 text-white/90 text-sm italic">
+                            "{copilotRec.situation}"
+                          </div>
+
+                          {/* Trade-off Summary */}
+                          <div className="mb-4 bg-white/10 rounded-lg p-3">
+                            <h4 className="font-semibold mb-1 text-sm">📊 Quick Trade-off Summary:</h4>
+                            <p className="text-sm text-white/95">
+                              {analysis.tradeoffs.substring(0, 150)}...
+                            </p>
+                          </div>
+
+                          {/* Specific Actions */}
+                          <div>
+                            <h4 className="font-semibold mb-2 text-sm">✨ Suggested Actions:</h4>
+                            <div className="space-y-2">
+                              {copilotRec.actions.map((action, idx) => (
+                                <motion.div
+                                  key={idx}
+                                  initial={{ opacity: 0, x: -10 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: 0.6 + idx * 0.1 }}
+                                  className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-2"
+                                >
+                                  <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
+                                  <span className="text-sm">{action}</span>
+                                </motion.div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
 
                   {/* Ingredients Breakdown */}
                   {analysis.ingredients && analysis.ingredients.length > 0 && (
@@ -387,6 +636,7 @@ export default function App() {
                     </p>
                   </div>
                 </div>
+                </motion.div>
               </motion.div>
             )}
           </AnimatePresence>
